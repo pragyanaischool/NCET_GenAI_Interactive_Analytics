@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import plotly.express as px
+import matplotlib.pyplot as plt
 
 from groq_llm import ask_llm
 from prompt_templates import build_prompt
