@@ -10,7 +10,7 @@ from memory import init_memory, add_to_memory, get_history
 
 st.set_page_config(layout="wide")
 st.title(" PragyanAI - GenAI Interactive Data Analytics")
-st.image("")
+st.image("PragyanAI_Transperent.png")
 init_memory()
 # ------------------ CSV Upload ------------------
 file = st.file_uploader(" Upload CSV", type=["csv"])
