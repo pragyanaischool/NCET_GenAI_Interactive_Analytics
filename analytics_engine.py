@@ -1,9 +1,12 @@
 def clean_code(code: str) -> str:
     """
-    Cleans LLM-generated code:
-    - Removes import statements
-    - Removes plotting libraries
-    - Removes unsafe keywords
+    Clean and sanitize LLM-generated Python code.
+
+    Fixes:
+    - Removes unsafe imports
+    - Fixes escape characters (\n, \", \')
+    - Removes broken line continuation '\'
+    - Strips unwanted characters
     """
 
     blocked_keywords = [
@@ -20,50 +23,79 @@ def clean_code(code: str) -> str:
     cleaned_lines = []
 
     for line in code.split("\n"):
-        line_strip = line.strip().lower()
 
-        # Skip unsafe lines
-        if any(keyword in line_strip for keyword in blocked_keywords):
+        line = line.strip()
+
+        # 🔒 Skip unsafe lines
+        if any(word in line.lower() for word in blocked_keywords):
             continue
 
-        cleaned_lines.append(line)
+        # 🔥 Fix escaped characters
+        line = line.replace('\\"', '"')
+        line = line.replace("\\'", "'")
 
-    return "\n".join(cleaned_lines)
+        # 🔥 Remove bad line continuation "\"
+        if line.endswith("\\"):
+            line = line[:-1]
+
+        # 🔥 Remove stray semicolons
+        line = line.replace(";", "")
+
+        if line:
+            cleaned_lines.append(line)
+
+    cleaned_code = "\n".join(cleaned_lines)
+
+    return cleaned_code
+
+
+def validate_code(code: str) -> str:
+    """
+    Additional validation and fixes:
+    - Replace escaped newlines
+    - Remove double backslashes
+    """
+
+    code = code.replace("\\n", "\n")
+    code = code.replace("\\\\", "\\")
+
+    return code
 
 
 def run_code(code: str, df):
     """
-    Executes cleaned pandas code safely.
+    Execute cleaned LLM-generated pandas code safely.
     """
 
-    # 🔧 Step 1: Clean code
-    code = clean_code(code)
-
-    # 🔍 Debug (optional)
-    # print("CLEANED CODE:\n", code)
-
-    local_vars = {"df": df.copy()}
+    import pandas as pd
 
     try:
-        # 🔧 Step 2: Execute code
+        # ---------------- CLEAN CODE ----------------
+        code = clean_code(code)
+        code = validate_code(code)
+
+        # 🔍 Debug (optional)
+        # print("FINAL CODE:\n", code)
+
+        # ---------------- EXECUTION ENV ----------------
+        local_vars = {"df": df.copy()}
+
+        # ---------------- EXECUTE ----------------
         exec(code, {}, local_vars)
 
-        # 🔧 Step 3: Ensure result_df exists
         result_df = local_vars.get("result_df", None)
 
+        # ---------------- VALIDATION ----------------
         if result_df is None:
             return df, "⚠️ result_df not created by LLM. Showing original dataset."
 
-        # 🔧 Step 4: Validate type
-        import pandas as pd
-
         if not isinstance(result_df, pd.DataFrame):
-            return df, "⚠️ result_df is not a DataFrame."
+            return df, "⚠️ result_df is not a valid DataFrame."
 
-        # 🔧 Step 5: Clean result_df
+        # ---------------- CLEAN RESULT ----------------
         result_df = result_df.drop_duplicates()
 
-        # Limit rows (avoid UI crash)
+        # Limit rows (prevent UI crash)
         if len(result_df) > 1000:
             result_df = result_df.head(1000)
 
@@ -71,4 +103,3 @@ def run_code(code: str, df):
 
     except Exception as e:
         return None, f"❌ Execution error: {str(e)}"
-        
