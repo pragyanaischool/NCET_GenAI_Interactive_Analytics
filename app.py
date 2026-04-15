@@ -13,48 +13,48 @@ st.title("🧠 GenAI Interactive Data Analytics")
 
 init_memory()
 
-# ---------------- SESSION STATE INIT ----------------
+# ---------------- SESSION STATE ----------------
 if "query" not in st.session_state:
     st.session_state.query = ""
 
-if "run_analysis" not in st.session_state:
-    st.session_state.run_analysis = False
+if "last_run_query" not in st.session_state:
+    st.session_state.last_run_query = ""
 
 # ---------------- CSV Upload ----------------
 file = st.file_uploader("📂 Upload CSV", type=["csv"])
 
 if file:
-    try:
-        df = pd.read_csv(file)
-    except:
-        df = pd.read_csv(file, encoding="latin1")
-
-    df = df.drop_duplicates()
+    df = pd.read_csv(file, encoding="latin1").drop_duplicates()
 
     st.subheader("📊 Dataset Preview")
     st.dataframe(df.head())
 
     st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
 
-    # ---------------- INPUT FIELD ----------------
-    def update_query():
-        st.session_state.query = st.session_state.input_box
-
-    st.text_input(
+    # ---------------- INPUT ----------------
+    user_input = st.text_input(
         "💬 Ask your question",
-        value=st.session_state.query,
-        key="input_box",
-        on_change=update_query
+        value=st.session_state.query
     )
 
-    # ---------------- ANALYZE BUTTON ----------------
+    # Update query if user types
+    if user_input != st.session_state.query:
+        st.session_state.query = user_input
+
+    # ---------------- TRIGGER ANALYSIS ----------------
+    run_analysis = False
+
     if st.button("Analyze"):
-        st.session_state.run_analysis = True
+        run_analysis = True
 
-    # ---------------- RUN ANALYSIS ----------------
-    if st.session_state.run_analysis and st.session_state.query:
+    # 🔥 AUTO RUN if query changed (THIS IS KEY FIX)
+    if st.session_state.query != st.session_state.last_run_query:
+        run_analysis = True
 
-        st.session_state.run_analysis = False  # reset trigger
+    # ---------------- RUN ----------------
+    if run_analysis and st.session_state.query:
+
+        st.session_state.last_run_query = st.session_state.query
 
         query = st.session_state.query
         history = get_history()
@@ -68,7 +68,7 @@ if file:
 
         response = ask_llm(messages)
 
-        # ---------------- JSON Parse ----------------
+        # ---------------- JSON PARSE ----------------
         try:
             parsed = json.loads(response)
         except:
@@ -142,14 +142,12 @@ if file:
         st.subheader("💡 Insights")
         st.write(parsed["insights"])
 
-        # ---------------- SUGGESTED QUESTIONS ----------------
+        # ---------------- SUGGESTIONS ----------------
         st.subheader("🔄 Suggested Next Questions")
 
         for i, q in enumerate(parsed["next_questions"]):
             if st.button(q, key=f"suggest_{i}"):
-                st.session_state.query = q   # ✅ SET QUERY
-                st.session_state.input_box = q  # ✅ UPDATE INPUT UI
-                st.session_state.run_analysis = True  # ✅ AUTO RUN
+                st.session_state.query = q  # 🔥 ONLY update query
                 st.rerun()
 
         # ---------------- MEMORY ----------------
