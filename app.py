@@ -13,6 +13,13 @@ st.title("🧠 GenAI Interactive Data Analytics")
 
 init_memory()
 
+# ---------------- SESSION STATE INIT ----------------
+if "query" not in st.session_state:
+    st.session_state.query = ""
+
+if "run_analysis" not in st.session_state:
+    st.session_state.run_analysis = False
+
 # ---------------- CSV Upload ----------------
 file = st.file_uploader("📂 Upload CSV", type=["csv"])
 
@@ -29,16 +36,27 @@ if file:
 
     st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
 
-    # ---------------- Suggested Query Handling ----------------
-    if "auto_query" in st.session_state:
-        default_query = st.session_state["auto_query"]
-    else:
-        default_query = ""
+    # ---------------- INPUT FIELD ----------------
+    def update_query():
+        st.session_state.query = st.session_state.input_box
 
-    query = st.text_input("💬 Ask your question", value=default_query)
+    st.text_input(
+        "💬 Ask your question",
+        value=st.session_state.query,
+        key="input_box",
+        on_change=update_query
+    )
 
-    if st.button("Analyze") and query:
+    # ---------------- ANALYZE BUTTON ----------------
+    if st.button("Analyze"):
+        st.session_state.run_analysis = True
 
+    # ---------------- RUN ANALYSIS ----------------
+    if st.session_state.run_analysis and st.session_state.query:
+
+        st.session_state.run_analysis = False  # reset trigger
+
+        query = st.session_state.query
         history = get_history()
 
         prompt = build_prompt(query, df.columns.tolist(), history)
@@ -58,114 +76,88 @@ if file:
             st.write(response)
             st.stop()
 
-        # ---------------- Defaults ----------------
-        if "chart" not in parsed:
-            parsed["chart"] = {"type": "bar", "x": None, "y": None}
+        parsed.setdefault("chart", {"type": "bar", "x": None, "y": None})
+        parsed.setdefault("next_questions", [
+            "Show summary",
+            "Top categories",
+            "Trend over time"
+        ])
 
-        if "next_questions" not in parsed:
-            parsed["next_questions"] = [
-                "Show summary",
-                "Top categories",
-                "Trend over time"
-            ]
-
-        # ---------------- Run Code ----------------
+        # ---------------- RUN CODE ----------------
         result_df, error = run_code(parsed["python_code"], df)
 
         if error:
             st.error(f"⚠️ Code execution error: {error}")
             st.stop()
 
-        # ---------------- Output ----------------
+        # ---------------- OUTPUT ----------------
         st.subheader("🧠 Analysis Steps")
         st.write(parsed["analysis_steps"])
 
         st.subheader("📊 Result Data")
         st.dataframe(result_df)
 
-        # ---------------- Chart Engine ----------------
+        # ---------------- CHART ----------------
         def generate_chart(result_df, chart_info):
             try:
-                chart_type = chart_info.get("type", "auto")
                 x = chart_info.get("x")
                 y = chart_info.get("y")
 
-                # Fix columns
                 if x not in result_df.columns:
                     x = result_df.columns[0]
 
                 if y not in result_df.columns:
                     y = result_df.columns[1] if len(result_df.columns) > 1 else result_df.columns[0]
 
-                if chart_type == "bar":
-                    fig = px.bar(result_df, x=x, y=y)
-                elif chart_type == "line":
-                    fig = px.line(result_df, x=x, y=y)
-                elif chart_type == "scatter":
-                    fig = px.scatter(result_df, x=x, y=y)
-                elif chart_type == "pie":
-                    fig = px.pie(result_df, names=x, values=y)
-                elif chart_type == "histogram":
-                    fig = px.histogram(result_df, x=x)
-                elif chart_type == "box":
-                    fig = px.box(result_df, x=x, y=y)
-                elif chart_type == "heatmap":
-                    fig = px.imshow(result_df.corr(numeric_only=True))
-                else:
-                    fig = px.bar(result_df, x=x, y=y)
+                chart_type = chart_info.get("type", "bar")
 
-                return fig
+                if chart_type == "line":
+                    return px.line(result_df, x=x, y=y)
+                elif chart_type == "scatter":
+                    return px.scatter(result_df, x=x, y=y)
+                elif chart_type == "pie":
+                    return px.pie(result_df, names=x, values=y)
+                elif chart_type == "histogram":
+                    return px.histogram(result_df, x=x)
+                elif chart_type == "box":
+                    return px.box(result_df, x=x, y=y)
+                elif chart_type == "heatmap":
+                    return px.imshow(result_df.corr(numeric_only=True))
+                else:
+                    return px.bar(result_df, x=x, y=y)
+
             except Exception as e:
                 print("Chart error:", e)
                 return None
 
-        chart_info = parsed["chart"]
+        fig = generate_chart(result_df, parsed["chart"])
 
-        chart_override = st.selectbox(
-            "📊 Override Chart Type",
-            ["auto","bar","line","scatter","pie","histogram","box","heatmap"]
-        )
-
-        if chart_override != "auto":
-            chart_info["type"] = chart_override
-
-        fig = generate_chart(result_df, chart_info)
-
-        if fig is not None:
+        if fig:
             st.subheader("📊 Visualization")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.error("❌ Chart generation failed")
-            st.write("Chart Info:", chart_info)
-            st.write("Columns:", result_df.columns.tolist())
 
-        # ---------------- Insights ----------------
+        # ---------------- INSIGHTS ----------------
         st.subheader("💡 Insights")
         st.write(parsed["insights"])
 
-        # ---------------- Suggested Questions ----------------
+        # ---------------- SUGGESTED QUESTIONS ----------------
         st.subheader("🔄 Suggested Next Questions")
 
         for i, q in enumerate(parsed["next_questions"]):
             if st.button(q, key=f"suggest_{i}"):
-                st.session_state["auto_query"] = q
+                st.session_state.query = q   # ✅ SET QUERY
+                st.session_state.input_box = q  # ✅ UPDATE INPUT UI
+                st.session_state.run_analysis = True  # ✅ AUTO RUN
                 st.rerun()
 
-        # ---------------- Debug ----------------
-        with st.expander("🔍 Debug Info"):
-            st.write(parsed)
-            st.write("Columns:", result_df.columns.tolist())
-
-        # ---------------- Memory ----------------
+        # ---------------- MEMORY ----------------
         add_to_memory(query, parsed["insights"])
 
-        # ---------------- Download ----------------
-        csv = result_df.to_csv(index=False).encode("utf-8")
-
+        # ---------------- DOWNLOAD ----------------
         st.download_button(
             "📥 Download Result",
-            csv,
-            "analysis.csv",
-            "text/csv"
+            result_df.to_csv(index=False),
+            "analysis.csv"
         )
-        
